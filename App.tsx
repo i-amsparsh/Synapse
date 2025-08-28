@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, Emotion, InputMode, ChatMessage, EmotionLogEntry, UserProfile } from './types';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
 import { useSpeechSynthesis } from './hooks/useSpeechSynthesis';
-import { performInitialAnalysis, generateEmpatheticResponseStream, extractUserDetails } from './services/geminiService';
+import { performInitialAnalysis, generateEmpatheticResponseStream, extractUserDetails, initializeAi } from './services/geminiService';
 import { Avatar } from './components/Avatar';
 import { ControlButton } from './components/ControlButton';
 import { Tabs } from './components/Tabs';
@@ -13,10 +13,13 @@ import { TextInput } from './components/TextInput';
 import { EmotionLog } from './components/EmotionLog';
 import { VoiceSelector } from './components/VoiceSelector';
 import { UserProfileDisplay } from './components/UserProfileDisplay';
+import { ApiKeyModal } from './components/ApiKeyModal';
 
 const USER_PROFILE_STORAGE_KEY = 'synapse-ai-user-profile';
+const API_KEY_STORAGE_KEY = 'synapse-ai-api-key';
 
 const App: React.FC = () => {
+    const [isInitialized, setIsInitialized] = useState<boolean>(false);
     const [appState, setAppState] = useState<AppState>(AppState.IDLE);
     const [emotion, setEmotion] = useState<Emotion>(Emotion.NEUTRAL);
     const [inputMode, setInputMode] = useState<InputMode>(InputMode.VOICE);
@@ -25,9 +28,24 @@ const App: React.FC = () => {
     const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(null);
 
     const abortControllerRef = useRef<AbortController | null>(null);
+    
+    // Check for API key on initial load
+    useEffect(() => {
+        try {
+            const storedKey = sessionStorage.getItem(API_KEY_STORAGE_KEY);
+            if (storedKey) {
+                initializeAi(storedKey);
+                setIsInitialized(true);
+            }
+        } catch (error) {
+            console.error("Failed to initialize with stored API key:", error);
+            sessionStorage.removeItem(API_KEY_STORAGE_KEY);
+        }
+    }, []);
 
     // Load user profile from local storage on initial render
     useEffect(() => {
+        if (!isInitialized) return;
         try {
             const storedProfile = localStorage.getItem(USER_PROFILE_STORAGE_KEY);
             if (storedProfile) {
@@ -36,16 +54,17 @@ const App: React.FC = () => {
         } catch (error) {
             console.error("Failed to load user profile from local storage:", error);
         }
-    }, []);
+    }, [isInitialized]);
 
     // Save user profile to local storage whenever it changes
     useEffect(() => {
+        if (!isInitialized) return;
         try {
             localStorage.setItem(USER_PROFILE_STORAGE_KEY, JSON.stringify(userProfile));
         } catch (error) {
             console.error("Failed to save user profile to local storage:", error);
         }
-    }, [userProfile]);
+    }, [userProfile, isInitialized]);
 
     const { speak, cancel, isSpeaking, voices } = useSpeechSynthesis();
     
@@ -196,6 +215,21 @@ const App: React.FC = () => {
             startListening();
         }
     }, [isListening, stopListening, startListening, recognitionError, clearError, isProcessing, cancel]);
+
+    const handleApiKeySubmit = (key: string) => {
+        try {
+            initializeAi(key);
+            sessionStorage.setItem(API_KEY_STORAGE_KEY, key);
+            setIsInitialized(true);
+        } catch (error) {
+            console.error("Failed to initialize with provided API key:", error);
+            alert("There was an error initializing the AI with that key. Please check the console for details.");
+        }
+    };
+
+    if (!isInitialized) {
+        return <ApiKeyModal onSubmit={handleApiKeySubmit} />;
+    }
 
     const emotionLogEntries: EmotionLogEntry[] = conversationHistory
         .reduce((acc, msg, index) => {
