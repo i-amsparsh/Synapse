@@ -185,7 +185,7 @@ const performInitialAnalysis = async (text: string): Promise<InitialAnalysis> =>
 
         if (result.emotion && result.languageCode) {
              return {
-                emotion: result.emotion as Emotion,
+                emotion: result.emotion,
                 languageCode: result.languageCode,
             };
         } else {
