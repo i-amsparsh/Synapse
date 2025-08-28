@@ -3,13 +3,31 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GEMINI_MODEL, PERFORM_INITIAL_ANALYSIS_PROMPT, EMPATHETIC_RESPONSE_PROMPT_STREAM, EXTRACT_USER_DETAILS_PROMPT } from '../constants';
 import { Emotion, InitialAnalysis, UserProfile } from '../types';
 
-if (!process.env.API_KEY) {
-    // This provides a clearer, more immediate warning if the API key is missing.
-    alert("CRITICAL ERROR: API_KEY environment variable not set. The application will not be able to communicate with the AI.");
-    console.error("API_KEY environment variable not set. App may not function correctly.");
-}
+let ai: GoogleGenAI | null = null;
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
+/**
+ * Initializes the GoogleGenAI client with the provided API key.
+ * This must be called before any other functions in this service.
+ * @param apiKey The user's Google Gemini API key.
+ */
+export const initializeAi = (apiKey: string) => {
+    if (!apiKey) {
+        throw new Error("API key is required to initialize the AI service.");
+    }
+    ai = new GoogleGenAI({ apiKey });
+};
+
+/**
+ * Retrieves the initialized GoogleGenAI client.
+ * @throws An error if the client has not been initialized.
+ * @returns The initialized GoogleGenAI instance.
+ */
+const getAiClient = (): GoogleGenAI => {
+    if (!ai) {
+        throw new Error("AI Client has not been initialized. Call initializeAi(apiKey) first.");
+    }
+    return ai;
+};
 
 /**
  * A centralized error handler for Gemini API calls.
@@ -27,7 +45,7 @@ const handleApiError = (error: any, functionName: string): never => {
         throw new Error("I'm feeling a bit overwhelmed right now. Please give me a moment before trying again.");
     }
     if (errorMessage.includes('API key not valid')) {
-         throw new Error("The API key is not configured correctly. Please check the setup.");
+         throw new Error("The API key is not valid. Please check it and try again.");
     }
     
     // Generic error for other cases
@@ -36,6 +54,7 @@ const handleApiError = (error: any, functionName: string): never => {
 
 
 export const performInitialAnalysis = async (text: string): Promise<InitialAnalysis> => {
+    const ai = getAiClient();
     try {
         const prompt = PERFORM_INITIAL_ANALYSIS_PROMPT(text);
         const response = await ai.models.generateContent({
@@ -72,6 +91,7 @@ export const performInitialAnalysis = async (text: string): Promise<InitialAnaly
 };
 
 export const generateEmpatheticResponseStream = async (text: string, analysis: InitialAnalysis, profile: UserProfile) => {
+    const ai = getAiClient();
     try {
         const prompt = EMPATHETIC_RESPONSE_PROMPT_STREAM(text, analysis.emotion, analysis.languageCode, profile);
         const response = await ai.models.generateContentStream({
@@ -89,6 +109,7 @@ export const generateEmpatheticResponseStream = async (text: string, analysis: I
 };
 
 export const extractUserDetails = async (userMessage: string): Promise<UserProfile | null> => {
+    const ai = getAiClient();
     try {
         const prompt = EXTRACT_USER_DETAILS_PROMPT(userMessage);
         const response = await ai.models.generateContent({
