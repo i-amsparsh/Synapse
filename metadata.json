@@ -1,0 +1,7 @@
+{
+  "name": "Synapse AI",
+  "description": "A next-generation AI that goes beyond simple commands to create emotionally intelligent interactions by listening, feeling, thinking, and responding with an expressive avatar.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
