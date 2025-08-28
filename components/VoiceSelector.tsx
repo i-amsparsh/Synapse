@@ -7,6 +7,27 @@ interface VoiceSelectorProps {
     disabled: boolean;
 }
 
+/**
+ * Generates a descriptive tooltip for a SpeechSynthesisVoice.
+ * @param voice - The voice object from the Web Speech API.
+ * @returns A string containing details like language, type, and network/local status.
+ */
+const generateVoiceTooltip = (voice: SpeechSynthesisVoice): string => {
+    const characteristicsKeywords = ['neural', 'natural', 'premium', 'enhanced', 'hd', 'wavenet', 'pro'];
+    const nameLower = voice.name.toLowerCase();
+    const foundChars = characteristicsKeywords.filter(char => nameLower.includes(char));
+
+    const parts = [`Language: ${voice.lang}`];
+    if (foundChars.length > 0) {
+        const capitalizedChars = foundChars.map(c => c.charAt(0).toUpperCase() + c.slice(1));
+        parts.push(`Type: ${capitalizedChars.join(', ')}`);
+    }
+    
+    parts.push(voice.localService ? 'Local' : 'Network');
+
+    return parts.join(' • ');
+};
+
 export const VoiceSelector: React.FC<VoiceSelectorProps> = ({ voices, selectedVoiceURI, onVoiceChange, disabled }) => {
     const groupedVoices = useMemo(() => {
         return voices.reduce((acc, voice) => {
@@ -38,7 +59,11 @@ export const VoiceSelector: React.FC<VoiceSelectorProps> = ({ voices, selectedVo
                     Object.entries(groupedVoices).map(([lang, voiceGroup]) => (
                         <optgroup key={lang} label={lang}>
                             {voiceGroup.map(voice => (
-                                <option key={voice.voiceURI} value={voice.voiceURI}>
+                                <option
+                                    key={voice.voiceURI}
+                                    value={voice.voiceURI}
+                                    title={generateVoiceTooltip(voice)}
+                                >
                                     {voice.name} ({voice.lang})
                                 </option>
                             ))}

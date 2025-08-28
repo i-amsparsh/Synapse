@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef } from 'react';
 import { ChatMessage } from '../types';
 import { EmotionIndicator } from './EmotionIndicator';
@@ -5,17 +6,18 @@ import { EmotionIndicator } from './EmotionIndicator';
 interface ChatHistoryProps {
   messages: ChatMessage[];
   isThinking: boolean;
+  interimUserMessage?: string;
 }
 
-export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isThinking }) => {
+export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isThinking, interimUserMessage }) => {
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     endOfMessagesRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isThinking]);
+  }, [messages, isThinking, interimUserMessage]);
 
   return (
-    <div className="chat-history w-full h-80 overflow-y-auto p-2 flex flex-col gap-4">
+    <div className="chat-history w-full flex-grow overflow-y-auto p-2 flex flex-col gap-4">
       {messages.map((msg, index) => (
         <div key={index} className={`chat-bubble-wrapper ${msg.sender === 'user' ? 'self-end' : 'self-start'}`}>
           <div className={`chat-bubble ${msg.sender === 'user' ? 'user' : 'ai'}`}>
@@ -37,6 +39,13 @@ export const ChatHistory: React.FC<ChatHistoryProps> = ({ messages, isThinking }
                     <span></span>
                     <span></span>
                 </div>
+            </div>
+        </div>
+      )}
+      {interimUserMessage && (
+        <div className="chat-bubble-wrapper self-end">
+            <div className="chat-bubble user opacity-70">
+                {interimUserMessage}
             </div>
         </div>
       )}

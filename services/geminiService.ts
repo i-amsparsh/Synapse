@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GEMINI_MODEL, PERFORM_INITIAL_ANALYSIS_PROMPT, EMPATHETIC_RESPONSE_PROMPT_STREAM, EXTRACT_USER_DETAILS_PROMPT } from '../constants';
 import { Emotion, InitialAnalysis, UserProfile } from '../types';
@@ -76,6 +77,10 @@ export const generateEmpatheticResponseStream = async (text: string, analysis: I
         const response = await ai.models.generateContentStream({
             model: GEMINI_MODEL,
             contents: prompt,
+            config: {
+                // Disable thinking for faster, more conversational responses.
+                thinkingConfig: { thinkingBudget: 0 }
+            }
         });
         return response;
     } catch (error) {
@@ -93,6 +98,8 @@ export const extractUserDetails = async (userMessage: string): Promise<UserProfi
                 responseMimeType: "application/json",
                 // We don't define a schema here because the keys can be anything.
                 // We rely on the model to return a valid JSON object.
+                // Disable thinking for faster background processing.
+                thinkingConfig: { thinkingBudget: 0 },
             },
         });
 

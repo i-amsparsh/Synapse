@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AppState, Emotion, InputMode, ChatMessage, EmotionLogEntry, UserProfile } from './types';
 import { useSpeechRecognition } from './hooks/useSpeechRecognition';
@@ -5,7 +7,6 @@ import { useSpeechSynthesis } from './hooks/useSpeechSynthesis';
 import { performInitialAnalysis, generateEmpatheticResponseStream, extractUserDetails } from './services/geminiService';
 import { Avatar } from './components/Avatar';
 import { ControlButton } from './components/ControlButton';
-import { StatusDisplay } from './components/StatusDisplay';
 import { Tabs } from './components/Tabs';
 import { ChatHistory } from './components/ChatHistory';
 import { TextInput } from './components/TextInput';
@@ -21,11 +22,6 @@ const App: React.FC = () => {
     const [inputMode, setInputMode] = useState<InputMode>(InputMode.VOICE);
     const [conversationHistory, setConversationHistory] = useState<ChatMessage[]>([]);
     const [userProfile, setUserProfile] = useState<UserProfile>({});
-
-    // States primarily for the voice UI's display
-    const [userSaidText, setUserSaidText] = useState('');
-    const [aiSaidText, setAiSaidText] = useState('');
-    const [detectedEmotionForDisplay, setDetectedEmotionForDisplay] = useState<Emotion | null>(null);
     const [selectedVoiceURI, setSelectedVoiceURI] = useState<string | null>(null);
 
     const abortControllerRef = useRef<AbortController | null>(null);
@@ -52,30 +48,11 @@ const App: React.FC = () => {
     }, [userProfile]);
 
     const { speak, cancel, isSpeaking, voices } = useSpeechSynthesis();
-    const { text: recognizedText, interimText, isListening, error: recognitionError, startListening, stopListening, hasRecognitionSupport, clearError } = useSpeechRecognition();
-
-    // Select a default voice once they are loaded
-    useEffect(() => {
-        if (voices.length > 0 && !selectedVoiceURI) {
-            const defaultVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
-            if (defaultVoice) {
-                setSelectedVoiceURI(defaultVoice.voiceURI);
-            }
-        }
-    }, [voices, selectedVoiceURI]);
-
-    const handleClearProfile = useCallback(() => {
-        if (window.confirm("Are you sure you want to erase all of the AI's memories about you? This action cannot be undone.")) {
-            setUserProfile({});
-        }
-    }, []);
-
+    
     const processUserRequest = useCallback(async (userText: string) => {
         if (!userText) return;
 
         setAppState(AppState.THINKING);
-        setUserSaidText(userText);
-        setAiSaidText('');
         setConversationHistory(prev => [...prev, { sender: 'user', content: userText }]);
 
         if (abortControllerRef.current) {
@@ -87,7 +64,10 @@ const App: React.FC = () => {
         try {
             const analysis = await performInitialAnalysis(userText);
             setEmotion(analysis.emotion);
-            setDetectedEmotionForDisplay(analysis.emotion);
+
+            // Add a placeholder for the AI's response to enable streaming into the chat
+            const aiMessagePlaceholder: ChatMessage = { sender: 'ai', content: '', detectedEmotion: analysis.emotion };
+            setConversationHistory(prev => [...prev, aiMessagePlaceholder]);
 
             const responseStream = await generateEmpatheticResponseStream(userText, analysis, userProfile);
             
@@ -101,7 +81,16 @@ const App: React.FC = () => {
                     const chunkText = chunk.text;
                     fullResponse += chunkText;
                     textBuffer += chunkText;
-                    setAiSaidText(fullResponse);
+
+                    // Stream response directly into the last message in history
+                    setConversationHistory(prev => {
+                        const newHistory = [...prev];
+                        if (newHistory.length > 0 && newHistory[newHistory.length - 1].sender === 'ai') {
+                           newHistory[newHistory.length - 1].content = fullResponse;
+                        }
+                        return newHistory;
+                    });
+
 
                     if (/[.!?]/.test(textBuffer)) {
                         const sentences = textBuffer.match(/[^.!?]+[.!?]+/g);
@@ -128,13 +117,13 @@ const App: React.FC = () => {
             await streamAndSpeak();
 
             if (controller.signal.aborted) {
+                // Clean up by removing the empty AI message placeholder if aborted
+                setConversationHistory(prev => prev.filter(m => m.content !== '' || m.sender !== 'ai' || m.detectedEmotion !== analysis.emotion));
                 setAppState(AppState.IDLE);
                 setEmotion(Emotion.NEUTRAL);
                 return;
             };
             
-            setConversationHistory(prev => [...prev, { sender: 'ai', content: fullResponse, detectedEmotion: analysis.emotion }]);
-
             // Don't extract details if the request was aborted.
             const extractedDetails = await extractUserDetails(userText);
             if (extractedDetails && Object.keys(extractedDetails).length > 0) {
@@ -144,7 +133,14 @@ const App: React.FC = () => {
         } catch (error: any) {
             console.error("Error processing user request:", error);
             setAppState(AppState.ERROR);
-            setAiSaidText(error.message || "I seem to be having trouble connecting. Please try again later.");
+            setConversationHistory(prev => {
+                const newHistory = [...prev];
+                const lastMessage = newHistory[newHistory.length - 1];
+                if (lastMessage && lastMessage.sender === 'ai') {
+                    lastMessage.content = error.message || "I seem to be having trouble connecting. Please try again later.";
+                }
+                return newHistory;
+            });
         } finally {
              if (!controller.signal.aborted) {
                 setAppState(AppState.IDLE);
@@ -154,12 +150,23 @@ const App: React.FC = () => {
         }
     }, [inputMode, speak, selectedVoiceURI, userProfile]);
 
+    const { interimText, isListening, error: recognitionError, startListening, stopListening, clearError } = useSpeechRecognition({ onTurnEnd: processUserRequest });
+
+    // Select a default voice once they are loaded
     useEffect(() => {
-        // FIX: Only process recognized text if the app is idle to prevent race conditions and API spam.
-        if (recognizedText && appState === AppState.IDLE) {
-            processUserRequest(recognizedText);
+        if (voices.length > 0 && !selectedVoiceURI) {
+            const defaultVoice = voices.find(v => v.lang.startsWith('en') && v.name.includes('Google')) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+            if (defaultVoice) {
+                setSelectedVoiceURI(defaultVoice.voiceURI);
+            }
         }
-    }, [recognizedText, processUserRequest, appState]);
+    }, [voices, selectedVoiceURI]);
+
+    const handleClearProfile = useCallback(() => {
+        if (window.confirm("Are you sure you want to erase all of the AI's memories about you? This action cannot be undone.")) {
+            setUserProfile({});
+        }
+    }, []);
     
     useEffect(() => {
         return () => {
@@ -168,30 +175,27 @@ const App: React.FC = () => {
         };
     }, [cancel]);
 
+    const isProcessing = ![AppState.IDLE, AppState.ERROR, AppState.LISTENING].includes(appState);
+
     const handleMicClick = useCallback(() => {
-        if (appState !== AppState.IDLE && appState !== AppState.LISTENING) {
-            // Cancel any ongoing thinking or speaking
+        // If AI is thinking or speaking, the button acts as an interrupt
+        if (isProcessing) {
             abortControllerRef.current?.abort();
             cancel();
             setAppState(AppState.IDLE);
             setEmotion(Emotion.NEUTRAL);
-            setUserSaidText('');
-            setAiSaidText('');
-            setDetectedEmotionForDisplay(null);
             return;
         }
 
+        // Otherwise, it toggles listening on and off
         if (isListening) {
             stopListening();
         } else {
-            setUserSaidText('');
-            setAiSaidText('');
-            setDetectedEmotionForDisplay(null);
             if (recognitionError) clearError();
             setAppState(AppState.LISTENING);
             startListening();
         }
-    }, [isListening, stopListening, startListening, recognitionError, clearError, appState, cancel]);
+    }, [isListening, stopListening, startListening, recognitionError, clearError, isProcessing, cancel]);
 
     const emotionLogEntries: EmotionLogEntry[] = conversationHistory
         .reduce((acc, msg, index) => {
@@ -209,31 +213,29 @@ const App: React.FC = () => {
             return acc;
         }, [] as EmotionLogEntry[]);
 
-    const isProcessing = ![AppState.IDLE, AppState.ERROR].includes(appState);
-
     const renderContent = () => {
         if (inputMode === InputMode.PROFILE) {
             return <UserProfileDisplay profile={userProfile} onClearProfile={handleClearProfile} />;
         }
         
         return (
-            <div className="w-full max-w-md mx-auto flex flex-col items-center justify-center gap-4">
+            <div className="w-full max-w-md mx-auto flex flex-col h-full gap-4">
                  {inputMode === InputMode.VOICE ? (
                     <>
-                        <StatusDisplay
-                            state={appState}
-                            userText={userSaidText}
-                            interimText={interimText}
-                            aiText={aiSaidText}
-                            detectedEmotion={detectedEmotionForDisplay}
+                        <ChatHistory 
+                            messages={conversationHistory} 
+                            isThinking={appState === AppState.THINKING} 
+                            interimUserMessage={isListening ? interimText : undefined}
                         />
-                        <ControlButton 
-                            onClick={handleMicClick} 
-                            isListening={isListening} 
-                            isProcessing={isProcessing}
-                        />
-                        <div className="h-16 mt-4">
-                           {voices.length > 0 && <VoiceSelector voices={voices} selectedVoiceURI={selectedVoiceURI} onVoiceChange={setSelectedVoiceURI} disabled={isProcessing} />}
+                        <div className="flex-shrink-0 w-full flex flex-col items-center gap-4 pt-4 border-t border-slate-700">
+                            <ControlButton 
+                                onClick={handleMicClick} 
+                                isListening={isListening} 
+                                isProcessing={isProcessing}
+                            />
+                            <div className="w-full">
+                               {voices.length > 0 && <VoiceSelector voices={voices} selectedVoiceURI={selectedVoiceURI} onVoiceChange={setSelectedVoiceURI} disabled={isProcessing || isListening} />}
+                            </div>
                         </div>
                     </>
                 ) : (
@@ -252,13 +254,13 @@ const App: React.FC = () => {
                 <h1 className="text-5xl font-bold text-slate-100">Synapse AI</h1>
                 <p className="text-slate-400 mt-2">Your Emotionally Intelligent Companion</p>
             </header>
-            <main className="w-full max-w-7xl mx-auto flex-grow flex lg:flex-row flex-col items-start justify-center gap-8 p-4">
+            <main className="w-full max-w-7xl mx-auto flex-grow flex lg:flex-row flex-col items-stretch justify-center gap-8 p-4">
                 <div className="w-full lg:w-1/4 flex flex-col items-center justify-start gap-6">
                     <Avatar state={appState} emotion={emotion} />
                 </div>
                  <div className="w-full lg:w-1/2 flex flex-col items-center gap-4">
-                    <Tabs activeTab={inputMode} onTabChange={(mode) => { cancel(); setAppState(AppState.IDLE); setInputMode(mode); }} />
-                    <div className="w-full flex-grow flex items-center justify-center p-4 bg-slate-800/50 rounded-lg min-h-[40rem]">
+                    <Tabs activeTab={inputMode} onTabChange={(mode) => { cancel(); stopListening(); setAppState(AppState.IDLE); setInputMode(mode); }} />
+                    <div className="w-full flex-grow flex flex-col p-4 bg-slate-800/50 rounded-lg">
                        {renderContent()}
                     </div>
                 </div>
