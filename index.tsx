@@ -1406,7 +1406,7 @@ const App: React.FC = () => {
     }
     
     return (
-        <div className="bg-slate-900 text-white min-h-screen flex flex-col items-center p-4 selection:bg-sky-500 selection:text-white">
+        <div className="min-h-screen flex flex-col items-center p-4 selection:bg-sky-500 selection:text-white">
             <header className="text-center my-6">
                 <h1 className="text-5xl font-bold text-slate-100">Synapse AI</h1>
                 <p className="text-slate-400 mt-2">Your Emotionally Intelligent Companion</p>
